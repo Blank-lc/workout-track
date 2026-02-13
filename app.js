@@ -1,5 +1,4 @@
 const { useState, useEffect } = React;
-const { Calendar, Dumbbell, TrendingUp, History, Settings, Plus, Trash2, CheckCircle, XCircle } = lucideReact;
 
 function WorkoutTracker() {
   const [currentView, setCurrentView] = useState('home');
@@ -281,7 +280,7 @@ function WorkoutTracker() {
       <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-800 text-white p-6">
         <div className="max-w-md mx-auto">
           <div className="text-center mb-8">
-            <Dumbbell className="inline-block w-12 h-12 mb-2 text-blue-400" />
+            💪
             <h1 className="text-3xl font-bold">Workout Tracker</h1>
             <p className="text-slate-400 mt-2">Select your training day</p>
             
@@ -289,12 +288,12 @@ function WorkoutTracker() {
               <div className="mt-4 flex items-center justify-center gap-2">
                 {todayPerformance === 'better' ? (
                   <>
-                    <CheckCircle className="w-8 h-8 text-green-500" />
+                    ✅
                     <span className="text-green-500 font-semibold">Great work today!</span>
                   </>
                 ) : (
                   <>
-                    <XCircle className="w-8 h-8 text-red-500" />
+                    ❌
                     <span className="text-red-500 font-semibold">Keep pushing!</span>
                   </>
                 )}
@@ -324,14 +323,14 @@ function WorkoutTracker() {
               onClick={() => setCurrentView('history')}
               className="w-full bg-slate-700 hover:bg-slate-600 text-white font-semibold py-3 px-6 rounded-lg flex items-center justify-center gap-2"
             >
-              <History className="w-5 h-5" />
+              📜
               View History
             </button>
             <button
               onClick={() => setCurrentView('settings')}
               className="w-full bg-slate-700 hover:bg-slate-600 text-white font-semibold py-3 px-6 rounded-lg flex items-center justify-center gap-2"
             >
-              <Settings className="w-5 h-5" />
+              ⚙️
               Settings
             </button>
           </div>
@@ -533,13 +532,13 @@ function WorkoutTracker() {
           </button>
 
           <h2 className="text-2xl font-bold mb-6 flex items-center gap-2">
-            <Calendar className="w-6 h-6" />
+            📅
             Workout History
           </h2>
 
           {history.length === 0 ? (
             <div className="text-center text-slate-400 py-12">
-              <History className="w-16 h-16 mx-auto mb-4 opacity-50" />
+              📜
               <p>No workouts logged yet!</p>
             </div>
           ) : (
@@ -600,7 +599,7 @@ function WorkoutTracker() {
               onClick={() => setAddingCategory(true)}
               className="w-full bg-green-600 hover:bg-green-700 text-white py-3 px-4 rounded-lg flex items-center justify-center gap-2 mb-6"
             >
-              <Plus className="w-5 h-5" />
+              ➕
               Add New Category ({Object.keys(categories).length}/7)
             </button>
           )}
@@ -698,7 +697,7 @@ function WorkoutTracker() {
                           className="text-red-400 hover:text-red-300 p-1.5 hover:bg-red-900/30 rounded transition"
                           title="Delete category"
                         >
-                          <Trash2 className="w-5 h-5" />
+                          🗑️
                         </button>
                       </div>
                     </>
@@ -717,7 +716,7 @@ function WorkoutTracker() {
                           onClick={() => removeExercise(categoryId, exercise)}
                           className="text-red-400 hover:text-red-300"
                         >
-                          <Trash2 className="w-4 h-4" />
+                          🗑️
                         </button>
                       </div>
                     ))
@@ -764,7 +763,7 @@ function WorkoutTracker() {
                     onClick={() => setEditingDay(categoryId)}
                     className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded flex items-center justify-center gap-2"
                   >
-                    <Plus className="w-4 h-4" />
+                    ➕
                     Add Exercise
                   </button>
                 )}
