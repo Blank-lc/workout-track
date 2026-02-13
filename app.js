@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { Calendar, Dumbbell, TrendingUp, History, Settings, Plus, Trash2, CheckCircle, XCircle } from 'lucide-react';
+const { useState, useEffect } = React;
+const { Calendar, Dumbbell, TrendingUp, History, Settings, Plus, Trash2, CheckCircle, XCircle } = lucideReact;
 
-export default function WorkoutTracker() {
+function WorkoutTracker() {
   const [currentView, setCurrentView] = useState('home');
   const [selectedDay, setSelectedDay] = useState(null);
   const [selectedExercises, setSelectedExercises] = useState([]);
@@ -802,3 +802,7 @@ export default function WorkoutTracker() {
     );
   }
 }
+
+// Mount the app
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<WorkoutTracker />);
