@@ -589,7 +589,7 @@ function WorkoutTracker() {
           </button>
 
           <h2 className="text-2xl font-bold mb-6 flex items-center gap-2">
-            <Settings className="w-6 h-6" />
+            ⚙️
             Customize Workout Categories
           </h2>
 
