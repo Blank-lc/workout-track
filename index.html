@@ -32,18 +32,16 @@
 </head>
 <body>
   <div id="root"></div>
-  <script type="text/babel" src="app.js"></script>
+  <script type="text/babel" src="app.js?v=2"></script>
   <script>
-    // Service worker temporarily disabled for debugging
-    /*
+    // Register service worker for offline functionality
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('sw.js')
           .then(reg => console.log('Service Worker registered'))
-          .catch(err => console.log('Service Worker registration failed'));
+          .catch(err => console.log('Service Worker registration failed:', err));
       });
     }
-    */
   </script>
 </body>
 </html>
