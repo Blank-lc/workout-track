@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+const { useState, useEffect } = React;
 
-export default function WorkoutTracker() {
+function WorkoutTracker() {
   const [currentView, setCurrentView] = useState('home');
   const [selectedDay, setSelectedDay] = useState(null);
   const [selectedExercises, setSelectedExercises] = useState([]);
@@ -2500,3 +2500,6 @@ export default function WorkoutTracker() {
     );
   }
 }
+
+// Render the app
+ReactDOM.render(<WorkoutTracker />, document.getElementById('root'));
