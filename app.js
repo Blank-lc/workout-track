@@ -639,11 +639,6 @@ function WorkoutTracker() {
     setSelectedDay(null);
     setSelectedExercises([]);
     setWorkoutData({});
-
-    // Show progress graph after 7 workouts
-    if (newHistory.length >= 7 && newHistory.length % 7 === 0) {
-      setTimeout(() => setShowProgressGraph(true), 500);
-    }
   };
 
   const addExercise = (categoryId) => {
@@ -885,16 +880,15 @@ function WorkoutTracker() {
           </div>
 
           <div className="space-y-3">
-            {/* Progress Graph Button - only show if 7+ workouts */}
-            {history.length >= 7 && (
-              <button
-                onClick={() => setShowProgressGraph(true)}
-                className="w-full bg-gradient-to-r from-yellow-600 to-orange-600 hover:from-yellow-500 hover:to-orange-500 text-white font-semibold py-3 px-6 rounded-lg flex items-center justify-center gap-2"
-              >
-                📊
-                View Progress Graph
-              </button>
-            )}
+            {/* Progress Graph Button - always visible */}
+            <button
+              onClick={() => setShowProgressGraph(true)}
+              className="w-full bg-gradient-to-r from-yellow-600 to-orange-600 hover:from-yellow-500 hover:to-orange-500 text-white font-semibold py-3 px-6 rounded-lg flex items-center justify-center gap-2"
+            >
+              📊
+              View Progress Graph
+            </button>
+            
             
             <button
               onClick={() => setCurrentView('history')}
