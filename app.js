@@ -1,6 +1,6 @@
 const { useState, useEffect } = React;
 
-const WorkoutTracker = () => {
+function WorkoutTracker() {
   const [currentView, setCurrentView] = useState('home');
   const [selectedDay, setSelectedDay] = useState(null);
   const [selectedExercises, setSelectedExercises] = useState([]);

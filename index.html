@@ -27,7 +27,8 @@
   <div id="root"></div>
   <script type="text/babel" src="app.js"></script>
   <script>
-    // Register service worker for offline functionality
+    // Service worker temporarily disabled for debugging
+    /*
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('sw.js')
@@ -35,6 +36,7 @@
           .catch(err => console.log('Service Worker registration failed'));
       });
     }
+    */
   </script>
 </body>
 </html>
