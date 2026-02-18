@@ -1,11 +1,11 @@
-const CACHE_NAME = 'workout-tracker-v2';
+const CACHE_NAME = 'workout-tracker-v1';
 const urlsToCache = [
-  '/workout-track/',
-  '/workout-track/index.html',
-  '/workout-track/app.js',
-  '/workout-track/manifest.json',
-  '/workout-track/icon-192.png',
-  '/workout-track/icon-512.png',
+  '/',
+  '/index.html',
+  '/app.js',
+  '/manifest.json',
+  '/icon-192.png',
+  '/icon-512.png',
   'https://unpkg.com/react@18/umd/react.production.min.js',
   'https://unpkg.com/react-dom@18/umd/react-dom.production.min.js',
   'https://unpkg.com/@babel/standalone/babel.min.js',

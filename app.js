@@ -1,16 +1,22 @@
-const { useState, useEffect } = React;
+import React, { useState, useEffect } from 'react';
 
-
-
-function WorkoutTracker() {
+export default function WorkoutTracker() {
   const [currentView, setCurrentView] = useState('home');
   const [selectedDay, setSelectedDay] = useState(null);
   const [selectedExercises, setSelectedExercises] = useState([]);
-  const [workoutData, setWorkoutData] = useState({});
+  const [workoutData, setWorkoutData] = useState({}); // Now stores arrays of sets per exercise
   const [history, setHistory] = useState([]);
   const [lastReset, setLastReset] = useState(new Date().toDateString());
   const [todayPerformance, setTodayPerformance] = useState(null);
+  const [todayGrade, setTodayGrade] = useState(null);
+  const [todayScore, setTodayScore] = useState(null);
+  const [customPerformanceMessage, setCustomPerformanceMessage] = useState(null);
+  const [showProgressGraph, setShowProgressGraph] = useState(false);
+  const [barDetails, setBarDetails] = useState(null); // For showing clicked bar info
+  const [graphViewMode, setGraphViewMode] = useState('all'); // 'all' or 'category'
+  const [graphCategoryFilter, setGraphCategoryFilter] = useState('chest');
   const [editingDay, setEditingDay] = useState(null);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [newExercise, setNewExercise] = useState('');
   const [newCategoryName, setNewCategoryName] = useState('');
   const [addingCategory, setAddingCategory] = useState(false);
@@ -47,6 +53,46 @@ function WorkoutTracker() {
     // Cardio
     'Running', 'Cycling', 'Rowing', 'Elliptical', 'Stair Climber', 'Jump Rope', 'Swimming'
   ];
+
+  // Exercise weighting system
+  const exerciseWeights = {
+    // Compound Multi-joint (3x) - Multiple joints, multiple muscle groups
+    'Bench Press': 3, 'Incline Bench Press': 3, 'Decline Bench Press': 3,
+    'Deadlift': 3, 'Squats': 3, 'Front Squats': 3,
+    'Pull-ups': 3, 'Chin-ups': 3,
+    'Overhead Press': 3, 'Military Press': 3,
+    'Dips': 3, 'Chest Dips': 3, 'Tricep Dips': 3,
+    'Push-ups': 3,
+    'Barbell Row': 3, 'T-Bar Row': 3,
+    'Lunges': 3, 'Bulgarian Split Squats': 3,
+    'Hip Thrusts': 3, 'Romanian Deadlift': 3,
+    
+    // Compound Single-joint (2x) - Primarily one joint, but significant load
+    'Dumbbell Press': 2, 'Incline Dumbbell Press': 2,
+    'Dumbbell Shoulder Press': 2, 'Arnold Press': 2,
+    'Leg Press': 2,
+    'Dumbbell Row': 2, 'Cable Row': 2, 'Lat Pulldown': 2,
+    'Close Grip Bench': 2,
+    'Skull Crushers': 2,
+    
+    // Isolation (1x) - Single joint, single muscle group focus
+    'Cable Flies': 1, 'Dumbbell Flies': 1, 'Pec Deck': 1,
+    'Lateral Raises': 1, 'Front Raises': 1, 'Rear Delt Flies': 1,
+    'Face Pulls': 1, 'Shrugs': 1, 'Upright Row': 1,
+    'Barbell Curl': 1, 'Dumbbell Curl': 1, 'Hammer Curl': 1, 'Preacher Curl': 1, 'Cable Curl': 1,
+    'Tricep Pushdown': 1, 'Overhead Tricep Extension': 1,
+    'Leg Curls': 1, 'Leg Extensions': 1, 'Calf Raises': 1,
+    'Planks': 1, 'Crunches': 1, 'Sit-ups': 1, 'Russian Twists': 1, 'Leg Raises': 1, 'Ab Wheel': 1,
+    
+    // Cardio (1x baseline, modified by intensity)
+    'Running': 1, 'Cycling': 1, 'Rowing': 1, 'Elliptical': 1, 
+    'Stair Climber': 1, 'Jump Rope': 1, 'Swimming': 1
+  };
+
+  // Helper function to get exercise weight
+  const getExerciseWeight = (exerciseName) => {
+    return exerciseWeights[exerciseName] || 1; // Default to 1x if not found
+  };
 
   const defaultCategories = {
     chest: {
@@ -103,6 +149,9 @@ function WorkoutTracker() {
         setSelectedExercises([]);
         setWorkoutData({});
         setTodayPerformance(null);
+        setTodayGrade(null);
+        setTodayScore(null);
+        setCustomPerformanceMessage(null);
       }
     }, 60000); // Check every minute
 
@@ -126,57 +175,136 @@ function WorkoutTracker() {
     if (savedPerformance && savedDate === new Date().toDateString()) {
       setTodayPerformance(savedPerformance);
     }
+
+    const savedGrade = localStorage.getItem('todayGrade');
+    const savedScore = localStorage.getItem('todayScore');
+    const savedCustomMessage = localStorage.getItem('customPerformanceMessage');
+    if (savedGrade && savedDate === new Date().toDateString()) {
+      setTodayGrade(savedGrade);
+      setTodayScore(savedScore);
+      setCustomPerformanceMessage(savedCustomMessage);
+    }
   }, []);
 
   const toggleExercise = (exercise) => {
     if (selectedExercises.includes(exercise)) {
       setSelectedExercises(selectedExercises.filter(e => e !== exercise));
+      // Remove exercise data when unselected
+      const newData = { ...workoutData };
+      delete newData[exercise];
+      setWorkoutData(newData);
     } else {
       setSelectedExercises([...selectedExercises, exercise]);
+      // Initialize with one empty set
+      setWorkoutData({
+        ...workoutData,
+        [exercise]: {
+          metricType: 'weight-reps',
+          sets: [{ weight: 0, reps: 0 }]
+        }
+      });
     }
   };
 
-  const updateWorkoutData = (exercise, field, value) => {
+  const addSet = (exercise) => {
+    const exerciseData = workoutData[exercise];
+    const metricType = exerciseData?.metricType || 'weight-reps';
+    
+    // For intensity-time, cap at 3 sets and find first unused intensity
+    let newSet;
+    if (metricType === 'weight-reps') {
+      newSet = { weight: 0, reps: 0 };
+    } else {
+      // Check if already at 3 sets for intensity-time
+      if (exerciseData.sets && exerciseData.sets.length >= 3) {
+        return; // Don't add more than 3 sets for intensity-time
+      }
+      
+      // Find which intensities are already used
+      const usedIntensities = new Set(exerciseData.sets?.map(s => s.intensity) || []);
+      const availableIntensities = ['low', 'moderate', 'high'].filter(i => !usedIntensities.has(i));
+      
+      newSet = { 
+        intensity: availableIntensities[0] || 'low', 
+        time: 0 
+      };
+    }
+    
     setWorkoutData({
       ...workoutData,
       [exercise]: {
-        ...workoutData[exercise],
-        [field]: field === 'intensity' ? value : (parseFloat(value) || 0)
+        ...exerciseData,
+        sets: [...(exerciseData?.sets || []), newSet]
+      }
+    });
+  };
+
+  const removeSet = (exercise, setIndex) => {
+    const exerciseData = workoutData[exercise];
+    setWorkoutData({
+      ...workoutData,
+      [exercise]: {
+        ...exerciseData,
+        sets: exerciseData.sets.filter((_, idx) => idx !== setIndex)
+      }
+    });
+  };
+
+  const updateSetData = (exercise, setIndex, field, value) => {
+    const exerciseData = workoutData[exercise];
+    const updatedSets = exerciseData.sets.map((set, idx) => {
+      if (idx === setIndex) {
+        return {
+          ...set,
+          [field]: field === 'intensity' ? value : (parseFloat(value) || 0)
+        };
+      }
+      return set;
+    });
+
+    setWorkoutData({
+      ...workoutData,
+      [exercise]: {
+        ...exerciseData,
+        sets: updatedSets
       }
     });
   };
 
   const toggleMetricType = (exercise, metricType) => {
+    const newSet = metricType === 'weight-reps'
+      ? { weight: 0, reps: 0 }
+      : { intensity: 'low', time: 0 };
+
     setWorkoutData({
       ...workoutData,
       [exercise]: {
-        ...workoutData[exercise],
         metricType: metricType,
-        // Reset values when switching
-        weight: 0,
-        reps: 0,
-        intensity: 'low',
-        time: 0
+        sets: [newSet]
       }
     });
   };
 
   const getComparison = (exercise) => {
     const current = workoutData[exercise];
-    if (!current) return null;
+    if (!current || !current.sets || current.sets.length === 0) return null;
 
     const metricType = current.metricType || 'weight-reps';
     
-    let currentVolume;
-    if (metricType === 'weight-reps') {
-      if (!current.weight || !current.reps) return null;
-      currentVolume = current.weight * current.reps;
-    } else {
-      // intensity-time
-      if (!current.intensity || !current.time) return null;
-      const intensityValue = current.intensity === 'high' ? 2 : 1;
-      currentVolume = intensityValue * current.time;
-    }
+    // Calculate TOTAL volume across all current sets
+    let currentTotalVolume = 0;
+    current.sets.forEach(set => {
+      if (metricType === 'weight-reps') {
+        if (!set.weight || !set.reps) return;
+        currentTotalVolume += set.weight * set.reps;
+      } else {
+        if (!set.intensity || !set.time) return;
+        const intensityValue = set.intensity === 'high' ? 2 : set.intensity === 'moderate' ? 1.5 : 1;
+        currentTotalVolume += intensityValue * set.time;
+      }
+    });
+
+    if (currentTotalVolume === 0) return null;
     
     // Find last time this exercise was done
     const lastEntry = [...history].reverse().find(entry => 
@@ -187,18 +315,49 @@ function WorkoutTracker() {
 
     const lastExercise = lastEntry.exercises.find(e => e.name === exercise);
     
-    let lastVolume;
-    if (lastExercise.metricType === 'intensity-time') {
-      const intensityValue = lastExercise.intensity === 'high' ? 2 : 1;
-      lastVolume = intensityValue * lastExercise.time;
+    // Calculate TOTAL volume across all previous sets
+    let lastTotalVolume = 0;
+    if (lastExercise.sets && lastExercise.sets.length > 0) {
+      lastExercise.sets.forEach(set => {
+        if (lastExercise.metricType === 'intensity-time') {
+          const intensityValue = set.intensity === 'high' ? 2 : set.intensity === 'moderate' ? 1.5 : 1;
+          lastTotalVolume += intensityValue * set.time;
+        } else {
+          lastTotalVolume += set.weight * set.reps;
+        }
+      });
     } else {
-      lastVolume = lastExercise.weight * lastExercise.reps;
+      // Old format compatibility
+      if (lastExercise.metricType === 'intensity-time') {
+        const intensityValue = lastExercise.intensity === 'high' ? 2 : lastExercise.intensity === 'moderate' ? 1.5 : 1;
+        lastTotalVolume = intensityValue * lastExercise.time;
+      } else {
+        lastTotalVolume = lastExercise.weight * lastExercise.reps;
+      }
     }
 
-    return currentVolume >= lastVolume ? 'better' : 'worse';
+    return currentTotalVolume >= lastTotalVolume ? 'better' : 'worse';
   };
 
   const saveWorkout = () => {
+    // Calculate score: strictly weight x reps, summed across all sets
+    let totalScore = 0;
+    selectedExercises.forEach(ex => {
+      const data = workoutData[ex] || {};
+      const metricType = data.metricType || 'weight-reps';
+      
+      if (data.sets && data.sets.length > 0) {
+        data.sets.forEach(set => {
+          if (metricType === 'weight-reps') {
+            totalScore += (set.weight || 0) * (set.reps || 0);
+          } else {
+            // Cardio: score is total duration in minutes
+            totalScore += (set.time || 0);
+          }
+        });
+      }
+    });
+    
     const workout = {
       date: new Date().toISOString(),
       dayType: selectedDay,
@@ -206,48 +365,270 @@ function WorkoutTracker() {
         const data = workoutData[ex] || {};
         const metricType = data.metricType || 'weight-reps';
         
-        if (metricType === 'weight-reps') {
-          return {
-            name: ex,
-            metricType: 'weight-reps',
-            weight: data.weight || 0,
-            reps: data.reps || 0
-          };
-        } else {
-          return {
-            name: ex,
-            metricType: 'intensity-time',
-            intensity: data.intensity || 'low',
-            time: data.time || 0
-          };
-        }
-      })
+        return {
+          name: ex,
+          metricType: metricType,
+          sets: data.sets || []
+        };
+      }),
+      score: Math.round(totalScore)
     };
 
-    // Calculate overall performance
-    let betterCount = 0;
-    let worseCount = 0;
-    selectedExercises.forEach(ex => {
-      const comparison = getComparison(ex);
-      if (comparison === 'better') betterCount++;
-      else if (comparison === 'worse') worseCount++;
-      else if (comparison === null) betterCount++; // No previous data = count as better
-    });
-
-    // Find the most recent NON-REST workout to get the baseline exercise count
-    const lastRealWorkout = [...history].reverse().find(w => w.dayType !== 'rest');
-    // Use the smaller of: last workout count OR current workout count for fair comparison
-    const baselineCount = lastRealWorkout 
-      ? Math.min(lastRealWorkout.exercises.length, selectedExercises.length)
-      : selectedExercises.length;
+    // Calculate grade based on last 5 workouts from the SAME CATEGORY
+    const recentWorkoutsInCategory = [...history]
+      .filter(w => w.dayType === selectedDay) // Same category only
+      .slice(-5);
     
-    // Need to beat/match 75% of the baseline exercise count
-    const requiredBetter = Math.ceil(baselineCount * 0.75);
-    const performance = betterCount >= requiredBetter ? 'better' : 'worse';
+    let grade = 10;
+    let gradeDisplay = '10';
+    let customPerformanceMessage = null; // For special cardio messages
+    
+    // Special logic for cardio workouts (check if any exercise uses intensity-time)
+    let hasIntensityTimeExercise = false;
+    selectedExercises.forEach(ex => {
+      const data = workoutData[ex] || {};
+      if (data.metricType === 'intensity-time') {
+        hasIntensityTimeExercise = true;
+      }
+    });
+    
+    const isCardioWorkout = selectedDay === 'cardio' || hasIntensityTimeExercise;
+    
+    if (isCardioWorkout) {
+      // Calculate total duration and intensity breakdown for this workout
+      let totalDuration = 0;
+      let highIntensityTime = 0;
+      let moderateIntensityTime = 0;
+      let lowIntensityTime = 0;
+      
+      selectedExercises.forEach(ex => {
+        const data = workoutData[ex] || {};
+        if (data.sets && data.sets.length > 0) {
+          data.sets.forEach(set => {
+            const time = set.time || 0;
+            totalDuration += time;
+            if (set.intensity === 'high') highIntensityTime += time;
+            else if (set.intensity === 'moderate') moderateIntensityTime += time;
+            else lowIntensityTime += time;
+          });
+        }
+      });
+      
+      if (recentWorkoutsInCategory.length === 0) {
+        // First cardio workout - this becomes the baseline
+        grade = 10;
+        gradeDisplay = '10';
+        customPerformanceMessage = "Great first cardio workout! This is your baseline!";
+      } else {
+      
+      // Find best duration from last 5 cardio workouts (raw duration, no intensity weighting)
+      let bestDuration = 0;
+      recentWorkoutsInCategory.forEach(w => {
+        let workoutDuration = 0;
+        w.exercises.forEach(ex => {
+          if (ex.sets && ex.sets.length > 0) {
+            ex.sets.forEach(set => {
+              workoutDuration += set.time || 0;
+            });
+          } else if (ex.time) {
+            // Old format
+            workoutDuration += ex.time;
+          }
+        });
+        if (workoutDuration > bestDuration) bestDuration = workoutDuration;
+      });
+      
+      // Grade based on duration percentage ONLY
+      const durationPercentage = bestDuration > 0 ? (totalDuration / bestDuration) * 100 : 100;
+      
+      // Calculate intensity breakdown for messages
+      const highIntensityPercentage = totalDuration > 0 ? (highIntensityTime / totalDuration) * 100 : 0;
+      const lowIntensityPercentage = totalDuration > 0 ? (lowIntensityTime / totalDuration) * 100 : 0;
+      const moderateIntensityPercentage = totalDuration > 0 ? (moderateIntensityTime / totalDuration) * 100 : 0;
+      
+      if (totalDuration >= bestDuration) {
+        // Beat or matched best duration - grade 10 with intensity-based messages
+        grade = 10;
+        
+        if (highIntensityPercentage >= 50) {
+          // 50%+ high intensity
+          gradeDisplay = totalDuration > bestDuration ? '10!!!' : '10!';
+          customPerformanceMessage = "High intensity! Nice work!";
+        } else if (lowIntensityPercentage >= 60) {
+          // 60%+ low intensity
+          gradeDisplay = totalDuration > bestDuration ? '10!!!' : '10!';
+          customPerformanceMessage = "Good job! Let's ramp up the intensity next time!";
+        } else {
+          // Moderate/balanced (30-60% low, or moderate dominant)
+          gradeDisplay = totalDuration > bestDuration ? '10!!!' : '10!';
+          customPerformanceMessage = "Great work! Keep it up!";
+        }
+      } else {
+        // Lower grades based on duration percentage
+        
+        if (durationPercentage >= 90) {
+          grade = 10;
+          if (highIntensityPercentage >= 50) {
+            customPerformanceMessage = "High intensity! Nice work!";
+          } else if (lowIntensityPercentage >= 60) {
+            customPerformanceMessage = "Good job! Let's ramp up the intensity next time!";
+          } else {
+            customPerformanceMessage = "Great work! Keep it up!";
+          }
+        }
+        else if (durationPercentage >= 80) {
+          grade = 9;
+          if (highIntensityPercentage >= 50) {
+            customPerformanceMessage = "Almost there! High intensity pays off!";
+          } else if (lowIntensityPercentage >= 60) {
+            customPerformanceMessage = "Almost there! Try adding more intensity!";
+          } else {
+            customPerformanceMessage = "So close! Just a bit more next time!";
+          }
+        }
+        else if (durationPercentage >= 70) {
+          grade = 8;
+          if (highIntensityPercentage >= 50) {
+            customPerformanceMessage = "Good effort! Keep that intensity up!";
+          } else if (lowIntensityPercentage >= 60) {
+            customPerformanceMessage = "Good effort! Let's increase the intensity!";
+          } else {
+            customPerformanceMessage = "Great work! Push a little harder next time!";
+          }
+        }
+        else if (durationPercentage >= 60) {
+          grade = 7;
+          if (highIntensityPercentage >= 50) {
+            customPerformanceMessage = "Solid workout! Love the intensity!";
+          } else if (lowIntensityPercentage >= 60) {
+            customPerformanceMessage = "Solid workout! More intensity will help!";
+          } else {
+            customPerformanceMessage = "Solid workout! Keep building on this!";
+          }
+        }
+        else if (durationPercentage >= 50) {
+          grade = 6;
+          if (highIntensityPercentage >= 50) {
+            customPerformanceMessage = "Halfway there! Intensity is on point!";
+          } else if (lowIntensityPercentage >= 60) {
+            customPerformanceMessage = "Halfway there! More intensity will help!";
+          } else {
+            customPerformanceMessage = "Halfway there! Keep pushing!";
+          }
+        }
+        else if (durationPercentage >= 40) {
+          grade = 5;
+          customPerformanceMessage = "You got this! Try to extend your workout!";
+        }
+        else if (durationPercentage >= 30) {
+          grade = 4;
+          customPerformanceMessage = "Every minute counts! Keep building!";
+        }
+        else if (durationPercentage >= 20) {
+          grade = 3;
+          customPerformanceMessage = "Good start! Work up to longer sessions!";
+        }
+        else if (durationPercentage >= 10) {
+          grade = 2;
+          customPerformanceMessage = "You showed up! That's what matters!";
+        }
+        else {
+          grade = 1;
+          customPerformanceMessage = "You're here! Build from this!";
+        }
+        
+        gradeDisplay = grade.toString();
+      }
+      } // End of cardio workout with previous history
+    } else if (recentWorkoutsInCategory.length > 0) {
+      // Regular weight training logic
+      const recentScores = recentWorkoutsInCategory.map(w => w.score || 0);
+      const bestScore = Math.max(...recentScores);
+      
+      if (totalScore >= bestScore) {
+        if (totalScore > bestScore) {
+          gradeDisplay = '10!!!';
+          customPerformanceMessage = "New personal best! Absolutely crushing it!";
+        } else {
+          gradeDisplay = '10!';
+          customPerformanceMessage = "Matched your best! Incredible consistency!";
+        }
+        grade = 10;
+      } else {
+        const percentage = (totalScore / bestScore) * 100;
+        
+        if (percentage >= 90) {
+          grade = 10;
+          customPerformanceMessage = "So close to your best! Keep pushing!";
+        }
+        else if (percentage >= 80) {
+          grade = 9;
+          customPerformanceMessage = "Strong session! You're right there!";
+        }
+        else if (percentage >= 70) {
+          grade = 8;
+          customPerformanceMessage = "Solid work! A little more and you'll hit your best!";
+        }
+        else if (percentage >= 60) {
+          grade = 7;
+          customPerformanceMessage = "Good effort! Keep building that strength!";
+        }
+        else if (percentage >= 50) {
+          grade = 6;
+          customPerformanceMessage = "Halfway to your best! Keep showing up!";
+        }
+        else if (percentage >= 40) {
+          grade = 5;
+          customPerformanceMessage = "Getting there! Every rep counts!";
+        }
+        else if (percentage >= 30) {
+          grade = 4;
+          customPerformanceMessage = "Keep grinding! Progress takes time!";
+        }
+        else if (percentage >= 20) {
+          grade = 3;
+          customPerformanceMessage = "You showed up! Now let's build on this!";
+        }
+        else if (percentage >= 10) {
+          grade = 2;
+          customPerformanceMessage = "Tough day but you did it! Come back stronger!";
+        }
+        else {
+          grade = 1;
+          customPerformanceMessage = "You're here and that matters! Keep going!";
+        }
+        
+        gradeDisplay = grade.toString();
+      }
+    }
+    
+    // First workout in this category - no previous history to compare
+    if (grade === 10 && gradeDisplay === '10' && !customPerformanceMessage) {
+      customPerformanceMessage = "First session logged! This is your baseline!";
+    }
+
+    // Save grade onto the workout object so the graph can read it directly
+    workout.grade = grade;
+    workout.gradeDisplay = gradeDisplay;
+
+    // Every completed workout gets positive performance
+    const performance = 'better';
     
     setTodayPerformance(performance);
+    setTodayGrade(gradeDisplay);
+    setTodayScore(totalScore.toString());
+    setCustomPerformanceMessage(customPerformanceMessage); // SET THE STATE!
     localStorage.setItem('todayPerformance', performance);
     localStorage.setItem('performanceDate', new Date().toDateString());
+    localStorage.setItem('todayGrade', gradeDisplay);
+    localStorage.setItem('todayScore', totalScore.toString());
+    
+    // Store custom message if exists
+    if (customPerformanceMessage) {
+      localStorage.setItem('customPerformanceMessage', customPerformanceMessage);
+    } else {
+      localStorage.removeItem('customPerformanceMessage');
+    }
 
     const newHistory = [...history, workout];
     setHistory(newHistory);
@@ -258,6 +639,11 @@ function WorkoutTracker() {
     setSelectedDay(null);
     setSelectedExercises([]);
     setWorkoutData({});
+
+    // Show progress graph after 7 workouts
+    if (newHistory.length >= 7 && newHistory.length % 7 === 0) {
+      setTimeout(() => setShowProgressGraph(true), 500);
+    }
   };
 
   const addExercise = (categoryId) => {
@@ -368,101 +754,103 @@ function WorkoutTracker() {
             <h1 className="text-3xl font-bold">Workout Tracker</h1>
             <p className="text-slate-400 mt-2">Select your training day</p>
             
-            <div className="mt-4 relative flex items-center justify-center h-8">
-              {/* Streak Tracker - Absolute Left */}
-              {(() => {
-                // Calculate current streak
-                const calculateStreak = () => {
-                  if (history.length === 0) return 0;
+            <div className="mt-4">
+              {/* Single row: streak left, message center, grade right */}
+              <div className="relative flex items-center justify-center min-h-[40px] px-14">
+                {/* Streak Tracker - Absolute Left */}
+                {(() => {
+                  // Calculate current streak
+                  const calculateStreak = () => {
+                    if (history.length === 0) return 0;
+                    
+                    let streak = 0;
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    
+                    // Create a set of dates with workouts
+                    const workoutDates = new Set();
+                    history.forEach(workout => {
+                      const date = new Date(workout.date);
+                      date.setHours(0, 0, 0, 0);
+                      workoutDates.add(date.toDateString());
+                    });
+                    
+                    // Check if today has a workout
+                    const hasWorkoutToday = workoutDates.has(today.toDateString());
+                    
+                    // Start from today or yesterday depending on if today has a workout
+                    let checkDate = new Date(today);
+                    if (!hasWorkoutToday) {
+                      checkDate.setDate(checkDate.getDate() - 1);
+                    }
+                    
+                    // Count consecutive days backwards
+                    while (workoutDates.has(checkDate.toDateString())) {
+                      streak++;
+                      checkDate.setDate(checkDate.getDate() - 1);
+                    }
+                    
+                    return streak;
+                  };
                   
-                  let streak = 0;
+                  const currentStreak = calculateStreak();
+                  
+                  // Check if today has a workout to determine if streak should be faded
                   const today = new Date();
                   today.setHours(0, 0, 0, 0);
-                  
-                  // Create a set of dates with workouts
-                  const workoutDates = new Set();
-                  history.forEach(workout => {
-                    const date = new Date(workout.date);
-                    date.setHours(0, 0, 0, 0);
-                    workoutDates.add(date.toDateString());
+                  const hasWorkoutToday = history.some(workout => {
+                    const workoutDate = new Date(workout.date);
+                    workoutDate.setHours(0, 0, 0, 0);
+                    return workoutDate.toDateString() === today.toDateString();
                   });
                   
-                  // Check if today has a workout
-                  const hasWorkoutToday = workoutDates.has(today.toDateString());
-                  
-                  // Start from today or yesterday depending on if today has a workout
-                  let checkDate = new Date(today);
-                  if (!hasWorkoutToday) {
-                    checkDate.setDate(checkDate.getDate() - 1);
-                  }
-                  
-                  // Count consecutive days backwards
-                  while (workoutDates.has(checkDate.toDateString())) {
-                    streak++;
-                    checkDate.setDate(checkDate.getDate() - 1);
-                  }
-                  
-                  return streak;
-                };
-                
-                const currentStreak = calculateStreak();
-                
-                // Check if today has a workout to determine if streak should be faded
-                const today = new Date();
-                today.setHours(0, 0, 0, 0);
-                const hasWorkoutToday = history.some(workout => {
-                  const workoutDate = new Date(workout.date);
-                  workoutDate.setHours(0, 0, 0, 0);
-                  return workoutDate.toDateString() === today.toDateString();
-                });
-                
-                if (currentStreak > 0) {
-                  return (
-                    <div className={`absolute left-0 bg-slate-800 py-2 px-3 rounded-lg ${!hasWorkoutToday ? 'opacity-30' : ''}`}>
-                      <div className="flex items-center gap-2">
+                  if (currentStreak > 0) {
+                    return (
+                      <div className={`absolute left-0 flex items-center gap-1 ${!hasWorkoutToday ? 'opacity-30' : ''}`}>
                         <span className="text-xl">🔥</span>
-                        <div>
-                          <p className="text-lg font-bold text-orange-400 leading-none">{currentStreak}</p>
-                          <p className="text-xs text-slate-400">day streak</p>
-                        </div>
+                        <span className="text-lg font-bold text-orange-400">{currentStreak}</span>
                       </div>
-                    </div>
-                  );
-                }
-                return null;
-              })()}
-              
-              {/* Performance Message - Centered */}
-              {todayPerformance && (
-                <div className="max-w-[180px] text-center">
-                  {todayPerformance === 'better' ? (
-                    <span className="text-green-500 font-semibold inline-block">
-                      ✅ {(() => {
-                          // Check if today's workout was a rest day
-                          const todayWorkout = history.length > 0 && 
-                            new Date(history[history.length - 1].date).toDateString() === new Date().toDateString() &&
-                            history[history.length - 1].dayType === 'rest';
-                          
-                          if (todayWorkout) {
-                            // Check for consecutive rest days
-                            const recentWorkouts = history.slice(-2);
-                            const consecutiveRestDays = recentWorkouts.filter(w => w.dayType === 'rest').length;
-                            
-                            if (consecutiveRestDays === 2) {
-                              return "Let's get a workout tomorrow!";
+                    );
+                  }
+                  return null;
+                })()}
+
+                {/* Performance Message - Centered */}
+                {todayPerformance && (
+                  <div className="text-center text-sm leading-tight max-w-[160px]">
+                    {todayPerformance === 'better' ? (
+                      <span className="text-green-500 font-semibold">
+                        {(() => {
+                            if (customPerformanceMessage) return customPerformanceMessage;
+                            const todayWorkout = history.length > 0 && 
+                              new Date(history[history.length - 1].date).toDateString() === new Date().toDateString() &&
+                              history[history.length - 1].dayType === 'rest';
+                            if (todayWorkout) {
+                              const recentWorkouts = history.slice(-2);
+                              const consecutiveRestDays = recentWorkouts.filter(w => w.dayType === 'rest').length;
+                              if (consecutiveRestDays === 2) return "Let's get a workout tomorrow!";
+                              return 'Recovery day complete!';
                             }
-                            return 'Recovery day complete!';
-                          }
-                          return 'Great work today!';
-                        })()}
+                            return 'Great work today!';
+                          })()}
                       </span>
                     ) : (
-                      <span className="text-red-500 font-semibold inline-block">
-                        ❌ Keep pushing!
+                      <span className="text-red-500 font-semibold">
+                        Keep pushing!
                       </span>
                     )}
-                </div>
-              )}
+                  </div>
+                )}
+
+                {/* Workout Grade - Absolute Right */}
+                {todayGrade && todayScore && (
+                  <div className="absolute right-0">
+                    <div className="bg-slate-800 py-1 px-3 rounded-lg border-2 border-yellow-500">
+                      <div className="text-xl font-bold text-yellow-400">{todayGrade}</div>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
@@ -497,6 +885,17 @@ function WorkoutTracker() {
           </div>
 
           <div className="space-y-3">
+            {/* Progress Graph Button - only show if 7+ workouts */}
+            {history.length >= 7 && (
+              <button
+                onClick={() => setShowProgressGraph(true)}
+                className="w-full bg-gradient-to-r from-yellow-600 to-orange-600 hover:from-yellow-500 hover:to-orange-500 text-white font-semibold py-3 px-6 rounded-lg flex items-center justify-center gap-2"
+              >
+                📊
+                View Progress Graph
+              </button>
+            )}
+            
             <button
               onClick={() => setCurrentView('history')}
               className="w-full bg-slate-700 hover:bg-slate-600 text-white font-semibold py-3 px-6 rounded-lg flex items-center justify-center gap-2"
@@ -520,6 +919,221 @@ function WorkoutTracker() {
             </button>
           </div>
         </div>
+
+        {/* Progress Graph Modal */}
+        {showProgressGraph && (() => {
+          // Get filtered workouts based on view mode
+          const filteredWorkouts = graphViewMode === 'all' 
+            ? history.slice(-7)
+            : history.filter(w => w.dayType === graphCategoryFilter).slice(-7);
+          
+          return (
+            <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50" onClick={() => setShowProgressGraph(false)}>
+              <div className="bg-slate-800 rounded-lg p-6 max-w-2xl w-full border-2 border-yellow-500" onClick={(e) => e.stopPropagation()}>
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-2xl font-bold text-yellow-400">Progress Graph</h3>
+                  <button
+                    onClick={() => setShowProgressGraph(false)}
+                    className="text-slate-400 hover:text-white text-3xl"
+                  >
+                    ×
+                  </button>
+                </div>
+                
+                {/* Tabs */}
+                <div className="flex gap-2 mb-4">
+                  <button
+                    onClick={() => setGraphViewMode('all')}
+                    className={`flex-1 py-2 px-4 rounded font-semibold transition ${
+                      graphViewMode === 'all'
+                        ? 'bg-yellow-500 text-slate-900'
+                        : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                    }`}
+                  >
+                    All Workouts
+                  </button>
+                  <button
+                    onClick={() => setGraphViewMode('category')}
+                    className={`flex-1 py-2 px-4 rounded font-semibold transition ${
+                      graphViewMode === 'category'
+                        ? 'bg-yellow-500 text-slate-900'
+                        : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                    }`}
+                  >
+                    By Category
+                  </button>
+                </div>
+
+                {/* Category Dropdown - only show in category mode */}
+                {graphViewMode === 'category' && (
+                  <div className="mb-4">
+                    <label className="block text-sm text-slate-400 mb-2">Select Category:</label>
+                    <select
+                      value={graphCategoryFilter}
+                      onChange={(e) => setGraphCategoryFilter(e.target.value)}
+                      className="w-full bg-slate-700 text-white px-4 py-2 rounded border-2 border-slate-600 focus:border-yellow-500 focus:outline-none"
+                    >
+                      {Object.entries(categories).map(([id, cat]) => (
+                        <option key={id} value={id}>{cat.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* Show message if not enough workouts */}
+                {filteredWorkouts.length === 0 ? (
+                  <div className="text-center py-20 text-slate-400">
+                    No workouts found for this category yet. Complete some workouts to see your progress!
+                  </div>
+                ) : (
+                  <>
+                    {/* Vertical Bar Graph */}
+                    <div className="flex items-end justify-around gap-3 h-80 bg-slate-900/50 rounded-lg p-4 border-b-2 border-slate-700">
+                      {filteredWorkouts.map((workout, idx) => {
+                  const score = workout.score || 0;
+                  const categoryName = workout.dayType === 'rest' ? 'Rest' : (categories[workout.dayType]?.name || workout.dayType);
+                  const date = new Date(workout.date);
+                  const dateStr = `${date.getMonth() + 1}/${date.getDate()}`;
+                  
+                  // Use saved grade directly from workout object
+                  const grade = workout.grade || (workout.dayType !== 'rest' && score > 0 ? 10 : 0);
+                  const gradeDisplay = workout.gradeDisplay || (workout.dayType !== 'rest' && score > 0 ? '10' : '-');
+                  
+                  const heightPercent = Math.max((grade / 10) * 100, score > 0 ? 10 : 2);
+                  
+                  // Get category color based on position in categories object
+                  const categoryColorMap = {
+                    'chest': 'from-blue-500 to-blue-600',
+                    'back': 'from-purple-500 to-purple-600',
+                    'legs': 'from-green-500 to-green-600',
+                    'cardio': 'from-orange-500 to-orange-600',
+                  };
+                  
+                  // Use category color in both modes
+                  const categoryColor = categoryColorMap[workout.dayType] || 'from-yellow-500 to-orange-500';
+                  const barColor = score > 0 ? `bg-gradient-to-t ${categoryColor}` : 'bg-slate-600';
+                  
+                  return (
+                    <div 
+                      key={idx} 
+                      className="flex flex-col items-center justify-end flex-1 min-w-0 h-full cursor-pointer"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (workout.dayType === 'rest') {
+                          setBarDetails({
+                            categoryName: 'Rest Day',
+                            dateStr,
+                            isRest: true
+                          });
+                        } else {
+                          const scoreText = workout.dayType === 'cardio' 
+                            ? `${score} minutes`
+                            : `${score.toLocaleString()} lbs lifted`;
+                          setBarDetails({
+                            categoryName,
+                            dateStr,
+                            scoreText,
+                            gradeDisplay,
+                            isRest: false
+                          });
+                        }
+                      }}
+                    >
+                      {/* Grade label above bar */}
+                      <div className="text-xs text-yellow-400 font-bold mb-1 whitespace-nowrap">
+                        {gradeDisplay}
+                      </div>
+                      
+                      {/* Vertical bar container */}
+                      <div className="w-full flex-1 flex items-end justify-center">
+                        <div 
+                          className={`w-full ${barColor} rounded-t transition-all duration-500 relative group min-h-[8px]`}
+                          style={{ height: `${heightPercent}%` }}
+                        >
+                          {/* Tooltip on hover */}
+                          <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 hidden group-hover:block bg-slate-700 text-white text-xs rounded py-1 px-2 whitespace-nowrap z-10 shadow-lg">
+                            {categoryName}
+                            {score > 0 && (
+                              <div className="text-yellow-400">
+                                {workout.dayType === 'cardio' 
+                                  ? `${score} mins`
+                                  : `${score.toLocaleString()} lbs`
+                                }
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {/* Date label */}
+                      <div className="text-xs text-slate-400 mt-2 whitespace-nowrap">
+                        {dateStr}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="mt-6 text-center">
+                <p className="text-slate-400 text-sm">
+                  {graphViewMode === 'all' 
+                    ? 'Grades are based on your performance in each category! 💪'
+                    : `Showing last ${filteredWorkouts.length} ${categories[graphCategoryFilter]?.name || ''} workouts`
+                  }
+                </p>
+                
+                {/* Color Legend - only in All Workouts mode */}
+                {graphViewMode === 'all' && (
+                  <div className="flex flex-wrap justify-center gap-3 mt-4">
+                    <div className="flex items-center gap-1">
+                      <div className="w-4 h-4 bg-gradient-to-t from-blue-500 to-blue-600 rounded"></div>
+                      <span className="text-xs text-slate-400">{categories.chest?.name || 'Chest/Arm'}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <div className="w-4 h-4 bg-gradient-to-t from-purple-500 to-purple-600 rounded"></div>
+                      <span className="text-xs text-slate-400">{categories.back?.name || 'Back/Shoulder'}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <div className="w-4 h-4 bg-gradient-to-t from-green-500 to-green-600 rounded"></div>
+                      <span className="text-xs text-slate-400">{categories.legs?.name || 'Legs'}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <div className="w-4 h-4 bg-gradient-to-t from-orange-500 to-orange-600 rounded"></div>
+                      <span className="text-xs text-slate-400">{categories.cardio?.name || 'Cardio'}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+              
+              {/* Bar Details Popup */}
+              {barDetails && (
+                <div className="absolute inset-0 flex items-center justify-center z-10" onClick={() => setBarDetails(null)}>
+                  <div className="bg-slate-800 border-2 border-yellow-500 rounded-lg p-4 m-4 max-w-xs" onClick={(e) => e.stopPropagation()}>
+                    <div className="text-center">
+                      <div className="text-lg font-bold text-yellow-400 mb-2">{barDetails.categoryName}</div>
+                      <div className="text-sm text-slate-400 mb-3">{barDetails.dateStr}</div>
+                      {!barDetails.isRest && (
+                        <>
+                          <div className="text-xl font-bold text-white mb-2">{barDetails.scoreText}</div>
+                          <div className="text-2xl font-bold text-yellow-400">Grade: {barDetails.gradeDisplay}</div>
+                        </>
+                      )}
+                    </div>
+                    <button 
+                      onClick={() => setBarDetails(null)}
+                      className="mt-4 w-full bg-slate-700 hover:bg-slate-600 text-white py-2 px-4 rounded"
+                    >
+                      Close
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+            </div>
+          </div>
+        );
+        })()}
       </div>
     );
   }
@@ -566,8 +1180,14 @@ function WorkoutTracker() {
                   const performance = consecutiveRestDays >= 2 ? 'worse' : 'better';
                   
                   setTodayPerformance(performance);
+                  setCustomPerformanceMessage(null); // Clear any custom messages
+                  setTodayGrade(null); // Clear grade state
+                  setTodayScore(null); // Clear score state
                   localStorage.setItem('todayPerformance', performance);
                   localStorage.setItem('performanceDate', new Date().toDateString());
+                  localStorage.removeItem('customPerformanceMessage'); // Clear custom message
+                  localStorage.removeItem('todayGrade'); // Clear grade too
+                  localStorage.removeItem('todayScore'); // Clear score too
 
                   const newHistory = [...history, workout];
                   setHistory(newHistory);
@@ -669,13 +1289,17 @@ function WorkoutTracker() {
   if (currentView === 'input') {
     const allFilled = selectedExercises.every(ex => {
       const data = workoutData[ex];
-      if (!data) return false;
+      if (!data || !data.sets || data.sets.length === 0) return false;
       const metricType = data.metricType || 'weight-reps';
-      if (metricType === 'weight-reps') {
-        return data.weight > 0 && data.reps > 0;
-      } else {
-        return data.intensity && data.time > 0;
-      }
+      
+      // Check that all sets are filled
+      return data.sets.every(set => {
+        if (metricType === 'weight-reps') {
+          return set.weight > 0 && set.reps > 0;
+        } else {
+          return set.intensity && set.time > 0;
+        }
+      });
     });
 
     return (
@@ -732,55 +1356,95 @@ function WorkoutTracker() {
                     </button>
                   </div>
 
-                  {/* Input fields based on metric type */}
-                  {metricType === 'weight-reps' ? (
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-sm text-slate-400 mb-1">Weight (lbs)</label>
-                        <input
-                          type="number"
-                          placeholder="0"
-                          className="w-full bg-slate-700 text-white px-3 py-2 rounded border-2 border-slate-600 focus:border-blue-500 focus:outline-none"
-                          value={workoutData[exercise]?.weight || ''}
-                          onChange={(e) => updateWorkoutData(exercise, 'weight', e.target.value)}
-                        />
+                  {/* Input fields for each set */}
+                  <div className="space-y-3">
+                    {(workoutData[exercise]?.sets || []).map((set, setIndex) => (
+                      <div key={setIndex}>
+                        <div className="flex items-center justify-between mb-2">
+                          <label className="text-sm font-medium text-slate-300">Set {setIndex + 1}</label>
+                          {setIndex > 0 && (
+                            <button
+                              onClick={() => removeSet(exercise, setIndex)}
+                              className="text-red-400 hover:text-red-300 text-sm"
+                            >
+                              Remove
+                            </button>
+                          )}
+                        </div>
+                        {metricType === 'weight-reps' ? (
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-xs text-slate-400 mb-1">Weight (lbs)</label>
+                              <input
+                                type="number"
+                                placeholder="0"
+                                className="w-full bg-slate-700 text-white px-3 py-2 rounded border-2 border-slate-600 focus:border-blue-500 focus:outline-none"
+                                value={set.weight || ''}
+                                onChange={(e) => updateSetData(exercise, setIndex, 'weight', e.target.value)}
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs text-slate-400 mb-1">Reps</label>
+                              <input
+                                type="number"
+                                placeholder="0"
+                                className="w-full bg-slate-700 text-white px-3 py-2 rounded border-2 border-slate-600 focus:border-blue-500 focus:outline-none"
+                                value={set.reps || ''}
+                                onChange={(e) => updateSetData(exercise, setIndex, 'reps', e.target.value)}
+                              />
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-xs text-slate-400 mb-1">Intensity</label>
+                              <select
+                                className="w-full bg-slate-700 text-white px-3 py-2 rounded border-2 border-slate-600 focus:border-blue-500 focus:outline-none"
+                                value={set.intensity || 'low'}
+                                onChange={(e) => updateSetData(exercise, setIndex, 'intensity', e.target.value)}
+                              >
+                                {(() => {
+                                  // Get all used intensities except the current set's intensity
+                                  const usedIntensities = (workoutData[exercise]?.sets || [])
+                                    .map((s, idx) => idx !== setIndex ? s.intensity : null)
+                                    .filter(Boolean);
+                                  
+                                  return (
+                                    <>
+                                      <option value="low" disabled={usedIntensities.includes('low')}>Low</option>
+                                      <option value="moderate" disabled={usedIntensities.includes('moderate')}>Moderate</option>
+                                      <option value="high" disabled={usedIntensities.includes('high')}>High</option>
+                                    </>
+                                  );
+                                })()}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-xs text-slate-400 mb-1">Time (min)</label>
+                              <input
+                                type="number"
+                                placeholder="0"
+                                className="w-full bg-slate-700 text-white px-3 py-2 rounded border-2 border-slate-600 focus:border-blue-500 focus:outline-none"
+                                value={set.time || ''}
+                                onChange={(e) => updateSetData(exercise, setIndex, 'time', e.target.value)}
+                              />
+                            </div>
+                          </div>
+                        )}
                       </div>
-                      <div>
-                        <label className="block text-sm text-slate-400 mb-1">Reps</label>
-                        <input
-                          type="number"
-                          placeholder="0"
-                          className="w-full bg-slate-700 text-white px-3 py-2 rounded border-2 border-slate-600 focus:border-blue-500 focus:outline-none"
-                          value={workoutData[exercise]?.reps || ''}
-                          onChange={(e) => updateWorkoutData(exercise, 'reps', e.target.value)}
-                        />
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-sm text-slate-400 mb-1">Intensity</label>
-                        <select
-                          className="w-full bg-slate-700 text-white px-3 py-2 rounded border-2 border-slate-600 focus:border-blue-500 focus:outline-none"
-                          value={workoutData[exercise]?.intensity || 'low'}
-                          onChange={(e) => updateWorkoutData(exercise, 'intensity', e.target.value)}
-                        >
-                          <option value="low">Low</option>
-                          <option value="high">High</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-sm text-slate-400 mb-1">Time (min)</label>
-                        <input
-                          type="number"
-                          placeholder="0"
-                          className="w-full bg-slate-700 text-white px-3 py-2 rounded border-2 border-slate-600 focus:border-blue-500 focus:outline-none"
-                          value={workoutData[exercise]?.time || ''}
-                          onChange={(e) => updateWorkoutData(exercise, 'time', e.target.value)}
-                        />
-                      </div>
-                    </div>
-                  )}
+                    ))}
+                    
+                    {/* Add Set Button - hidden for intensity-time at 3 sets */}
+                    {!(metricType === 'intensity-time' && (workoutData[exercise]?.sets?.length >= 3)) && (
+                      <button
+                        onClick={() => addSet(exercise)}
+                        className="w-full bg-slate-700 hover:bg-slate-600 text-white py-2 px-3 rounded border-2 border-slate-600 hover:border-blue-500 transition flex items-center justify-center gap-2"
+                      >
+                        <span className="text-lg">+</span>
+                        <span>Add Set</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
               );
             })}
@@ -909,17 +1573,35 @@ function WorkoutTracker() {
                       <span className="text-sm text-slate-400">{formatDate(workout.date)}</span>
                     </div>
                     {!isRestDay && (
-                      <div className="space-y-2">
+                      <div className="space-y-3">
                         {workout.exercises.map((ex, i) => {
                           const metricType = ex.metricType || 'weight-reps';
-                          const displayText = metricType === 'weight-reps'
-                            ? `${ex.weight} lbs × ${ex.reps} reps`
-                            : `${ex.intensity} × ${ex.time} min`;
                           
                           return (
-                            <div key={i} className="text-sm bg-slate-700 p-2 rounded flex justify-between">
-                              <span>{ex.name}</span>
-                              <span className="text-slate-400">{displayText}</span>
+                            <div key={i} className="bg-slate-700 p-2 rounded">
+                              <div className="font-medium text-sm mb-1">{ex.name}</div>
+                              {ex.sets && ex.sets.length > 0 ? (
+                                <div className="space-y-1">
+                                  {ex.sets.map((set, setIdx) => {
+                                    const displayText = metricType === 'weight-reps'
+                                      ? `${set.weight} lbs × ${set.reps} reps`
+                                      : `${set.intensity} × ${set.time} min`;
+                                    return (
+                                      <div key={setIdx} className="text-xs text-slate-400 flex justify-between">
+                                        <span>Set {setIdx + 1}</span>
+                                        <span>{displayText}</span>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              ) : (
+                                // Old format compatibility
+                                <div className="text-xs text-slate-400">
+                                  {metricType === 'weight-reps'
+                                    ? `${ex.weight} lbs × ${ex.reps} reps`
+                                    : `${ex.intensity} × ${ex.time} min`}
+                                </div>
+                              )}
                             </div>
                           );
                         })}
@@ -991,15 +1673,6 @@ function WorkoutTracker() {
                       >
                         <div className="h-full flex flex-col">
                           <div className="text-center text-sm font-medium">{day}</div>
-                          {isRestDay ? (
-                            <div className="flex-1 flex items-center justify-center text-lg">
-                              😴
-                            </div>
-                          ) : hasWorkout ? (
-                            <div className="flex-1 flex items-center justify-center text-lg">
-                              ✅
-                            </div>
-                          ) : null}
                         </div>
                       </button>
                     );
@@ -1017,7 +1690,7 @@ function WorkoutTracker() {
                     <span>Workout</span>
                   </div>
                   <div className="flex items-center gap-1">
-                    <div className="w-4 h-4 border-2 border-slate-400 rounded flex items-center justify-center text-xs">😴</div>
+                    <div className="w-4 h-4 border-2 border-slate-400 rounded"></div>
                     <span>Rest</span>
                   </div>
                 </div>
@@ -1052,17 +1725,35 @@ function WorkoutTracker() {
                       {isRestDay && '😴'} {categoryName}
                     </h4>
                     {!isRestDay && (
-                      <div className="space-y-1">
+                      <div className="space-y-2">
                         {mostRecentWorkout.exercises.map((ex, i) => {
                           const metricType = ex.metricType || 'weight-reps';
-                          const displayText = metricType === 'weight-reps'
-                            ? `${ex.weight} lbs × ${ex.reps} reps`
-                            : `${ex.intensity} × ${ex.time} min`;
                           
                           return (
-                            <div key={i} className="text-sm bg-slate-600 p-2 rounded flex justify-between">
-                              <span>{ex.name}</span>
-                              <span className="text-slate-300">{displayText}</span>
+                            <div key={i} className="bg-slate-600 p-2 rounded">
+                              <div className="font-medium text-sm mb-1">{ex.name}</div>
+                              {ex.sets && ex.sets.length > 0 ? (
+                                <div className="space-y-1">
+                                  {ex.sets.map((set, setIdx) => {
+                                    const displayText = metricType === 'weight-reps'
+                                      ? `${set.weight} lbs × ${set.reps} reps`
+                                      : `${set.intensity} × ${set.time} min`;
+                                    return (
+                                      <div key={setIdx} className="text-xs text-slate-300 flex justify-between">
+                                        <span>Set {setIdx + 1}</span>
+                                        <span>{displayText}</span>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              ) : (
+                                // Old format compatibility
+                                <div className="text-xs text-slate-300">
+                                  {metricType === 'weight-reps'
+                                    ? `${ex.weight} lbs × ${ex.reps} reps`
+                                    : `${ex.intensity} × ${ex.time} min`}
+                                </div>
+                              )}
                             </div>
                           );
                         })}
@@ -1245,12 +1936,18 @@ function WorkoutTracker() {
               <h3 className="font-semibold text-slate-400 text-sm uppercase tracking-wide mb-3">Exercise Awards</h3>
               <div className="grid grid-cols-3 gap-2">
                 {(() => {
+                  // Get all currently available exercises from categories
+                  const availableExercises = new Set();
+                  Object.values(categories).forEach(category => {
+                    category.exercises.forEach(ex => availableExercises.add(ex));
+                  });
+                  
                   // Get all unique exercises from history
                   const exerciseCounts = {};
                   history.forEach(workout => {
                     if (workout.dayType !== 'rest') {
                       workout.exercises.forEach(ex => {
-                        if (ex.name !== 'Rest') {
+                        if (ex.name !== 'Rest' && availableExercises.has(ex.name)) {
                           exerciseCounts[ex.name] = (exerciseCounts[ex.name] || 0) + 1;
                         }
                       });
@@ -1532,11 +2229,7 @@ function WorkoutTracker() {
 
           {/* TEMPORARY: Reset to Defaults Button */}
           <button
-            onClick={() => {
-              setCategories(defaultCategories);
-              localStorage.removeItem('customCategories');
-              alert('Categories reset to defaults! Refresh the page to see changes. ✅');
-            }}
+            onClick={() => setShowResetConfirm(true)}
             className="w-full bg-red-600 hover:bg-red-700 text-white py-3 px-4 rounded-lg mb-6 font-semibold"
           >
             🔄 Reset Categories to Defaults (Click to Reset)
@@ -1772,9 +2465,38 @@ function WorkoutTracker() {
             </div>
           </div>
         )}
+        
+        {/* Reset Confirmation Modal */}
+        {showResetConfirm && (
+          <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
+            <div className="bg-slate-800 rounded-lg p-6 max-w-sm border-2 border-red-500">
+              <h3 className="text-xl font-bold text-white mb-4">Reset Categories?</h3>
+              <p className="text-slate-300 mb-6">
+                Are you sure you want to reset all categories to defaults? This will remove all custom categories and exercises. Your workout history will not be affected.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    setCategories(defaultCategories);
+                    localStorage.removeItem('customCategories');
+                    setShowResetConfirm(false);
+                    alert('Categories reset to defaults! ✅');
+                  }}
+                  className="flex-1 bg-red-600 hover:bg-red-700 text-white py-2 px-4 rounded font-semibold"
+                >
+                  Yes, Reset
+                </button>
+                <button
+                  onClick={() => setShowResetConfirm(false)}
+                  className="flex-1 bg-slate-600 hover:bg-slate-500 text-white py-2 px-4 rounded font-semibold"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
 }
-
-ReactDOM.render(<WorkoutTracker />, document.getElementById('root'));
