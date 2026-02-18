@@ -1,6 +1,4 @@
-import React, { useState, useEffect } from 'react';
-
-export default function WorkoutTracker() {
+const WorkoutTracker = () => {
   const [currentView, setCurrentView] = useState('home');
   const [selectedDay, setSelectedDay] = useState(null);
   const [selectedExercises, setSelectedExercises] = useState([]);
@@ -2500,3 +2498,7 @@ export default function WorkoutTracker() {
     );
   }
 }
+
+// Render the app
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<WorkoutTracker />);
